@@ -114,7 +114,7 @@ class User
   end
 
   def profile_picture_from_file(temp_file, options = {})
-    img = PhotoStore.instance.read_image temp_file
+    img = PhotoStore.instance.read_image(temp_file).first
     return img if img.is_a? Hash
     save_profile_picture(img, options)
   end

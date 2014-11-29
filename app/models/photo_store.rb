@@ -5,8 +5,7 @@ require 'singleton'
 class PhotoStore
   include Singleton
 
-
-  # @return [Magick::Image]
+  # @return [Magick::ImageList]
   def read_image(temp_file, check_if_existing = false)
     temp_file = UploadFile.new(temp_file) unless temp_file.is_a? UploadFile
     return { status: 'File was not an allowed image type - only jpg, gif, and png accepted.' } unless temp_file.photo_type?
@@ -15,7 +14,8 @@ class PhotoStore
       return { status: 'File has already been uploaded.', photo: existing_photo.id.to_s } unless existing_photo.nil?
     end
     begin
-      img = Magick::Image::read(temp_file.tempfile.path).first
+      img_list = Magick::ImageList.new(temp_file.tempfile.path)
+      puts "Image list size: #{img_list.size}, #{img_list.length}"
     rescue Java::JavaLang::NullPointerException
       # yeah, ImageMagick throws a NPE if the photo isn't a photo
       return { status: 'Photo could not be opened - is it an image?' }
@@ -24,16 +24,28 @@ class PhotoStore
       exif = EXIFR::JPEG.new(temp_file.tempfile)
       orientation = exif.orientation
       if orientation
-        img = orientation.transform_rmagick(img)
+        img_list = orientation.transform_rmagick(img_list)
       end
     end
-    img
+    img_list
+  end
+
+  # @param [Magick::Image] img
+  # @return [Magick::Image]
+  def self.overlay_play_icon(img)
+    play_overlay = Magick::Image::read('public/img/play_overlay.png').first
+    puts "Playoverlay class #{play_overlay._image.class}"
+    img.composite(play_overlay, Magick::NorthEastGravity, 0, 0, Magick::OverCompositeOp).flatten_images
   end
 
   def upload(temp_file, uploader)
     temp_file = UploadFile.new(temp_file)
-    img = read_image temp_file, true
-    return img if img.is_a? Hash
+    img_list = read_image temp_file, false
+    return img_list if img_list.is_a? Hash
+    img = img_list.first
+    is_animated = (img_list.length > 1) || true
+    puts "Detected animated gif: #{is_animated}"
+    img = PhotoStore.overlay_play_icon(img) if is_animated
     photo = store(temp_file, uploader)
     img.resize_to_fit(200, 200).write "tmp/#{photo.store_filename}"
     FileUtils.move "tmp/#{photo.store_filename}", sm_thumb_path(photo.store_filename)
